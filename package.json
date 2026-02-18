@@ -1,0 +1,55 @@
+{
+  "name": "@fluid-mcp/server",
+  "version": "1.0.0",
+  "description": "MCP Server for Fluid DeFi Protocol — AI agents can read protocol data, get rates, manage positions, swap tokens, and interact with lending/borrowing across all Fluid-supported chains.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "fluid-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "fluid",
+    "defi",
+    "lending",
+    "borrowing",
+    "swap",
+    "ethereum",
+    "arbitrum",
+    "base",
+    "polygon",
+    "instadapp",
+    "ai-agent",
+    "model-context-protocol"
+  ],
+  "author": "Ahmad Mardeni",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "ethers": "^6.13.4",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahmadmardeni/fluid-mcp-server"
+  }
+}
