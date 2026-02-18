@@ -4,16 +4,54 @@
 
 import { ethers } from "ethers";
 
+const TWO_POW_256 = 2n ** 256n;
+
 /**
- * Format a rate value (expressed in ray = 1e27) to an annual percentage.
+ * Decode a uint256 that actually represents a two's complement int256.
+ * Fluid stores negative borrow values (smart debt/col) as uint256 on-chain.
+ * A value > 2^255 - 1 means it's a negative int256.
  */
-export function formatRateToAPY(rateRay: bigint): string {
-  // Rates in Fluid are per-second rates scaled by 1e27
-  // APY = (1 + rate)^seconds_per_year - 1
-  const rate = Number(rateRay) / 1e27;
-  const secondsPerYear = 365.25 * 24 * 60 * 60;
-  const apy = (Math.pow(1 + rate, secondsPerYear) - 1) * 100;
-  return `${apy.toFixed(4)}%`;
+export function decodeInt256(raw: bigint): bigint {
+  const MAX_INT256 = (TWO_POW_256 / 2n) - 1n;
+  if (raw > MAX_INT256) {
+    return raw - TWO_POW_256;
+  }
+  return raw;
+}
+
+/**
+ * Fluid vault exchange prices are scaled by 1e12.
+ * To convert shares to actual token amounts:
+ *   tokenAmount = (shares * exchangePrice) / 1e12
+ *
+ * The result is in the token's native decimals.
+ */
+export const EXCHANGE_PRICE_PRECISION = 10n ** 12n;
+
+/**
+ * Convert vault shares to actual token amount using exchange price.
+ * Returns the amount in token's smallest unit (needs formatUnits for display).
+ */
+export function sharesToTokenAmount(
+  shares: bigint,
+  exchangePrice: bigint
+): bigint {
+  if (shares === 0n || exchangePrice === 0n) return 0n;
+  // Use absolute value for calculation, preserve sign
+  const absShares = shares < 0n ? -shares : shares;
+  const absAmount = (absShares * exchangePrice) / EXCHANGE_PRICE_PRECISION;
+  return shares < 0n ? -absAmount : absAmount;
+}
+
+/**
+ * Format a Fluid rate value to a percentage string.
+ *
+ * Fluid resolver rates are in basis points (1 unit = 0.01%).
+ * e.g. supplyRate 407 => 4.07%, borrowRate 253 => 2.53%
+ */
+export function formatRateToAPY(rateBps: bigint): string {
+  const pct = Number(rateBps) / 100;
+  return `${parseFloat(pct.toFixed(2))}%`;
 }
 
 /**
@@ -24,20 +62,38 @@ export function formatPercentage(value: bigint, scale: number = 1e4): string {
 }
 
 /**
+ * Format a vault config value that is in basis points (1e4 = 100%).
+ * e.g. collateralFactor 8800 => "88%", liquidationThreshold 31605 => "316.05%"
+ */
+export function formatVaultPercent(basisPoints: number): string {
+  const pct = basisPoints / 100;
+  // Use up to 2 decimal places, strip trailing zeros
+  return `${parseFloat(pct.toFixed(2))}%`;
+}
+
+/**
  * Format a bigint token amount given decimals.
+ * If decimals is unreasonable (>30), returns the raw string instead of formatting.
  */
 export function formatTokenAmount(
   amount: bigint,
   decimals: number,
   significantDigits: number = 6
 ): string {
-  const formatted = ethers.formatUnits(amount, decimals);
+  // Guard against unreasonable decimals (e.g. T3/T4 vaults with DEX LP tokens)
+  if (decimals > 30) {
+    return amount.toString();
+  }
+  const isNegative = amount < 0n;
+  const absAmount = isNegative ? -amount : amount;
+  const formatted = ethers.formatUnits(absAmount, decimals);
   const num = parseFloat(formatted);
   if (num === 0) return "0";
   if (num < 0.000001) return `< 0.000001`;
-  return num.toLocaleString("en-US", {
+  const display = num.toLocaleString("en-US", {
     maximumFractionDigits: significantDigits,
   });
+  return isNegative ? `-${display}` : display;
 }
 
 /**

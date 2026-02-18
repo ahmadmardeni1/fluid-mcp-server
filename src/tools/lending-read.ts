@@ -11,7 +11,7 @@ import { z } from "zod";
 import { getProvider, getContract } from "../utils/provider.js";
 import { getChainConfig, SUPPORTED_CHAINS, CONTRACTS } from "../config/chains.js";
 import { LENDING_RESOLVER_ABI } from "../abis/index.js";
-import { serializeBigInts } from "../utils/formatting.js";
+import { serializeBigInts, formatRateToAPY } from "../utils/formatting.js";
 
 const ChainParam = z.string().describe(`Blockchain network. Supported: ${SUPPORTED_CHAINS.join(", ")}`);
 
@@ -69,7 +69,9 @@ export const lendingReadTools = {
                   convertToShares: details.convertToShares,
                   convertToAssets: details.convertToAssets,
                   supplyRate: details.supplyRate,
+                  supplyAPY: formatRateToAPY(BigInt(details.supplyRate.toString())),
                   rewardsRate: details.rewardsRate,
+                  rewardsAPY: formatRateToAPY(BigInt(details.rewardsRate.toString())),
                   rebalanceDifference: details.rebalanceDifference,
                   liquidityBalance: details.liquidityBalance,
                 }),

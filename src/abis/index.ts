@@ -176,6 +176,213 @@ export const LENDING_RESOLVER_ABI = [
 // ============================================================================
 // VAULT RESOLVER
 // ============================================================================
+
+// Reusable sub-struct fragments for Vault Resolver
+const TokensStruct = {
+  components: [
+    { internalType: "address", name: "token0", type: "address" },
+    { internalType: "address", name: "token1", type: "address" },
+  ],
+  type: "tuple",
+};
+
+const ConstantViewsStruct = {
+  components: [
+    { internalType: "address", name: "liquidity", type: "address" },
+    { internalType: "address", name: "factory", type: "address" },
+    { internalType: "address", name: "operateImplementation", type: "address" },
+    { internalType: "address", name: "adminImplementation", type: "address" },
+    { internalType: "address", name: "secondaryImplementation", type: "address" },
+    { internalType: "address", name: "deployer", type: "address" },
+    { internalType: "address", name: "supply", type: "address" },
+    { internalType: "address", name: "borrow", type: "address" },
+    { ...TokensStruct, internalType: "struct IFluidVault.Tokens", name: "supplyToken" },
+    { ...TokensStruct, internalType: "struct IFluidVault.Tokens", name: "borrowToken" },
+    { internalType: "uint256", name: "vaultId", type: "uint256" },
+    { internalType: "uint256", name: "vaultType", type: "uint256" },
+    { internalType: "bytes32", name: "supplyExchangePriceSlot", type: "bytes32" },
+    { internalType: "bytes32", name: "borrowExchangePriceSlot", type: "bytes32" },
+    { internalType: "bytes32", name: "userSupplySlot", type: "bytes32" },
+    { internalType: "bytes32", name: "userBorrowSlot", type: "bytes32" },
+  ],
+  internalType: "struct IFluidVault.ConstantViews",
+  name: "constantVariables",
+  type: "tuple",
+};
+
+const ConfigsStruct = {
+  components: [
+    { internalType: "uint16", name: "supplyRateMagnifier", type: "uint16" },
+    { internalType: "uint16", name: "borrowRateMagnifier", type: "uint16" },
+    { internalType: "uint16", name: "collateralFactor", type: "uint16" },
+    { internalType: "uint16", name: "liquidationThreshold", type: "uint16" },
+    { internalType: "uint16", name: "liquidationMaxLimit", type: "uint16" },
+    { internalType: "uint16", name: "withdrawalGap", type: "uint16" },
+    { internalType: "uint16", name: "liquidationPenalty", type: "uint16" },
+    { internalType: "uint16", name: "borrowFee", type: "uint16" },
+    { internalType: "address", name: "oracle", type: "address" },
+    { internalType: "uint256", name: "oraclePriceOperate", type: "uint256" },
+    { internalType: "uint256", name: "oraclePriceLiquidate", type: "uint256" },
+    { internalType: "address", name: "rebalancer", type: "address" },
+    { internalType: "uint256", name: "lastUpdateTimestamp", type: "uint256" },
+  ],
+  internalType: "struct Structs.Configs",
+  name: "configs",
+  type: "tuple",
+};
+
+const ExchangePricesAndRatesStruct = {
+  components: [
+    { internalType: "uint256", name: "lastStoredLiquiditySupplyExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "lastStoredLiquidityBorrowExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "lastStoredVaultSupplyExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "lastStoredVaultBorrowExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "liquiditySupplyExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "liquidityBorrowExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "vaultSupplyExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "vaultBorrowExchangePrice", type: "uint256" },
+    { internalType: "uint256", name: "supplyRateLiquidity", type: "uint256" },
+    { internalType: "uint256", name: "borrowRateLiquidity", type: "uint256" },
+    { internalType: "int256", name: "supplyRateVault", type: "int256" },
+    { internalType: "int256", name: "borrowRateVault", type: "int256" },
+    { internalType: "int256", name: "rewardsOrFeeRateSupply", type: "int256" },
+    { internalType: "int256", name: "rewardsOrFeeRateBorrow", type: "int256" },
+  ],
+  internalType: "struct Structs.ExchangePricesAndRates",
+  name: "exchangePricesAndRates",
+  type: "tuple",
+};
+
+const TotalSupplyAndBorrowStruct = {
+  components: [
+    { internalType: "uint256", name: "totalSupplyVault", type: "uint256" },
+    { internalType: "uint256", name: "totalBorrowVault", type: "uint256" },
+    { internalType: "uint256", name: "totalSupplyLiquidityOrDex", type: "uint256" },
+    { internalType: "uint256", name: "totalBorrowLiquidityOrDex", type: "uint256" },
+    { internalType: "uint256", name: "absorbedSupply", type: "uint256" },
+    { internalType: "uint256", name: "absorbedBorrow", type: "uint256" },
+  ],
+  internalType: "struct Structs.TotalSupplyAndBorrow",
+  name: "totalSupplyAndBorrow",
+  type: "tuple",
+};
+
+const LimitsAndAvailabilityStruct = {
+  components: [
+    { internalType: "uint256", name: "withdrawLimit", type: "uint256" },
+    { internalType: "uint256", name: "withdrawableUntilLimit", type: "uint256" },
+    { internalType: "uint256", name: "withdrawable", type: "uint256" },
+    { internalType: "uint256", name: "borrowLimit", type: "uint256" },
+    { internalType: "uint256", name: "borrowableUntilLimit", type: "uint256" },
+    { internalType: "uint256", name: "borrowable", type: "uint256" },
+    { internalType: "uint256", name: "borrowLimitUtilization", type: "uint256" },
+    { internalType: "uint256", name: "minimumBorrowing", type: "uint256" },
+  ],
+  internalType: "struct Structs.LimitsAndAvailability",
+  name: "limitsAndAvailability",
+  type: "tuple",
+};
+
+const CurrentBranchStateStruct = {
+  components: [
+    { internalType: "uint256", name: "status", type: "uint256" },
+    { internalType: "int256", name: "minimaTick", type: "int256" },
+    { internalType: "uint256", name: "debtFactor", type: "uint256" },
+    { internalType: "uint256", name: "partials", type: "uint256" },
+    { internalType: "uint256", name: "debtLiquidity", type: "uint256" },
+    { internalType: "uint256", name: "baseBranchId", type: "uint256" },
+    { internalType: "int256", name: "baseBranchMinima", type: "int256" },
+  ],
+  internalType: "struct Structs.CurrentBranchState",
+  name: "currentBranchState",
+  type: "tuple",
+};
+
+const VaultStateStruct = {
+  components: [
+    { internalType: "uint256", name: "totalPositions", type: "uint256" },
+    { internalType: "int256", name: "topTick", type: "int256" },
+    { internalType: "uint256", name: "currentBranch", type: "uint256" },
+    { internalType: "uint256", name: "totalBranch", type: "uint256" },
+    { internalType: "uint256", name: "totalBorrow", type: "uint256" },
+    { internalType: "uint256", name: "totalSupply", type: "uint256" },
+    CurrentBranchStateStruct,
+  ],
+  internalType: "struct Structs.VaultState",
+  name: "vaultState",
+  type: "tuple",
+};
+
+const LiquidityUserSupplyDataStruct = {
+  components: [
+    { internalType: "bool", name: "isAllowed", type: "bool" },
+    { internalType: "uint256", name: "supply", type: "uint256" },
+    { internalType: "uint256", name: "withdrawalLimit", type: "uint256" },
+    { internalType: "uint256", name: "lastUpdateTimestamp", type: "uint256" },
+    { internalType: "uint256", name: "expandPercent", type: "uint256" },
+    { internalType: "uint256", name: "expandDuration", type: "uint256" },
+    { internalType: "uint256", name: "baseWithdrawalLimit", type: "uint256" },
+  ],
+  internalType: "struct IFluidLiquidityResolver.UserSupplyData",
+  name: "liquidityUserSupplyData",
+  type: "tuple",
+};
+
+const LiquidityUserBorrowDataStruct = {
+  components: [
+    { internalType: "bool", name: "isAllowed", type: "bool" },
+    { internalType: "uint256", name: "borrow", type: "uint256" },
+    { internalType: "uint256", name: "borrowLimit", type: "uint256" },
+    { internalType: "uint256", name: "lastUpdateTimestamp", type: "uint256" },
+    { internalType: "uint256", name: "expandPercent", type: "uint256" },
+    { internalType: "uint256", name: "expandDuration", type: "uint256" },
+    { internalType: "uint256", name: "baseBorrowLimit", type: "uint256" },
+    { internalType: "uint256", name: "maxBorrowLimit", type: "uint256" },
+  ],
+  internalType: "struct IFluidLiquidityResolver.UserBorrowData",
+  name: "liquidityUserBorrowData",
+  type: "tuple",
+};
+
+const UserPositionStruct = {
+  components: [
+    { internalType: "uint256", name: "nftId", type: "uint256" },
+    { internalType: "address", name: "owner", type: "address" },
+    { internalType: "bool", name: "isLiquidated", type: "bool" },
+    { internalType: "bool", name: "isSupplyPosition", type: "bool" },
+    { internalType: "int256", name: "tick", type: "int256" },
+    { internalType: "uint256", name: "tickId", type: "uint256" },
+    { internalType: "uint256", name: "beforeSupply", type: "uint256" },
+    { internalType: "uint256", name: "beforeBorrow", type: "uint256" },
+    { internalType: "uint256", name: "beforeDustBorrow", type: "uint256" },
+    { internalType: "uint256", name: "supply", type: "uint256" },
+    { internalType: "uint256", name: "borrow", type: "uint256" },
+    { internalType: "uint256", name: "dustBorrow", type: "uint256" },
+  ],
+  internalType: "struct Structs.UserPosition",
+  name: "position_",
+  type: "tuple",
+};
+
+const VaultEntireDataStruct = {
+  components: [
+    { internalType: "address", name: "vault", type: "address" },
+    { internalType: "bool", name: "isSmartCol", type: "bool" },
+    { internalType: "bool", name: "isSmartDebt", type: "bool" },
+    ConstantViewsStruct,
+    ConfigsStruct,
+    ExchangePricesAndRatesStruct,
+    TotalSupplyAndBorrowStruct,
+    LimitsAndAvailabilityStruct,
+    VaultStateStruct,
+    LiquidityUserSupplyDataStruct,
+    LiquidityUserBorrowDataStruct,
+  ],
+  internalType: "struct Structs.VaultEntireData",
+  name: "entireData_",
+  type: "tuple",
+};
+
 export const VAULT_RESOLVER_ABI = [
   {
     inputs: [],
@@ -201,106 +408,7 @@ export const VAULT_RESOLVER_ABI = [
   {
     inputs: [{ internalType: "address", name: "vault_", type: "address" }],
     name: "getVaultEntireData",
-    outputs: [
-      {
-        components: [
-          { internalType: "address", name: "vault", type: "address" },
-          {
-            components: [
-              { internalType: "address", name: "liquidity", type: "address" },
-              { internalType: "address", name: "factory", type: "address" },
-              { internalType: "address", name: "adminImplementation", type: "address" },
-              { internalType: "address", name: "secondaryImplementation", type: "address" },
-              { internalType: "address", name: "supplyToken", type: "address" },
-              { internalType: "address", name: "borrowToken", type: "address" },
-              { internalType: "uint8", name: "supplyDecimals", type: "uint8" },
-              { internalType: "uint8", name: "borrowDecimals", type: "uint8" },
-              { internalType: "uint256", name: "vaultId", type: "uint256" },
-              { internalType: "bytes32", name: "liquiditySupplyExchangePriceSlot", type: "bytes32" },
-              { internalType: "bytes32", name: "liquidityBorrowExchangePriceSlot", type: "bytes32" },
-              { internalType: "bytes32", name: "liquidityUserSupplySlot", type: "bytes32" },
-              { internalType: "bytes32", name: "liquidityUserBorrowSlot", type: "bytes32" },
-            ],
-            internalType: "struct IFluidVaultResolver.ConstantVariables",
-            name: "constantVariables",
-            type: "tuple",
-          },
-          {
-            components: [
-              { internalType: "uint16", name: "supplyRateMagnifier", type: "uint16" },
-              { internalType: "uint16", name: "borrowRateMagnifier", type: "uint16" },
-              { internalType: "uint16", name: "collateralFactor", type: "uint16" },
-              { internalType: "uint16", name: "liquidationThreshold", type: "uint16" },
-              { internalType: "uint16", name: "liquidationMaxLimit", type: "uint16" },
-              { internalType: "uint16", name: "withdrawGap", type: "uint16" },
-              { internalType: "uint16", name: "liquidationPenalty", type: "uint16" },
-              { internalType: "uint16", name: "borrowFee", type: "uint16" },
-              { internalType: "address", name: "oracle", type: "address" },
-              { internalType: "uint256", name: "oraclePrice", type: "uint256" },
-              { internalType: "address", name: "rebalancer", type: "address" },
-            ],
-            internalType: "struct IFluidVaultResolver.Configs",
-            name: "configs",
-            type: "tuple",
-          },
-          {
-            components: [
-              { internalType: "uint256", name: "totalSupply", type: "uint256" },
-              { internalType: "uint256", name: "totalBorrow", type: "uint256" },
-              { internalType: "uint256", name: "supplyRate", type: "uint256" },
-              { internalType: "uint256", name: "borrowRate", type: "uint256" },
-              { internalType: "uint256", name: "supplyExchangePrice", type: "uint256" },
-              { internalType: "uint256", name: "borrowExchangePrice", type: "uint256" },
-              { internalType: "uint256", name: "lastUpdateTimestamp", type: "uint256" },
-            ],
-            internalType: "struct IFluidVaultResolver.ExchangePricesAndRates",
-            name: "exchangePricesAndRates",
-            type: "tuple",
-          },
-          {
-            components: [
-              { internalType: "uint256", name: "totalSupplyVault", type: "uint256" },
-              { internalType: "uint256", name: "totalBorrowVault", type: "uint256" },
-              { internalType: "uint256", name: "totalSupplyLiquidity", type: "uint256" },
-              { internalType: "uint256", name: "totalBorrowLiquidity", type: "uint256" },
-              { internalType: "uint256", name: "absorbedSupply", type: "uint256" },
-              { internalType: "uint256", name: "absorbedBorrow", type: "uint256" },
-            ],
-            internalType: "struct IFluidVaultResolver.TotalSupplyAndBorrow",
-            name: "totalSupplyAndBorrow",
-            type: "tuple",
-          },
-          {
-            components: [
-              { internalType: "uint256", name: "withdrawLimit", type: "uint256" },
-              { internalType: "uint256", name: "withdrawableUntilLimit", type: "uint256" },
-              { internalType: "uint256", name: "withdrawable", type: "uint256" },
-              { internalType: "uint256", name: "borrowLimit", type: "uint256" },
-              { internalType: "uint256", name: "borrowableUntilLimit", type: "uint256" },
-              { internalType: "uint256", name: "borrowable", type: "uint256" },
-              { internalType: "uint256", name: "minimumBorrowing", type: "uint256" },
-            ],
-            internalType: "struct IFluidVaultResolver.LimitsAndAvailability",
-            name: "limitsAndAvailability",
-            type: "tuple",
-          },
-          {
-            components: [
-              { internalType: "uint256", name: "supplyExchangePrice", type: "uint256" },
-              { internalType: "uint256", name: "borrowExchangePrice", type: "uint256" },
-            ],
-            internalType: "struct IFluidVaultResolver.LiquidityExchangePrices",
-            name: "liquidityExchangePrices",
-            type: "tuple",
-          },
-          { internalType: "bool", name: "isSmartCol", type: "bool" },
-          { internalType: "bool", name: "isSmartDebt", type: "bool" },
-        ],
-        internalType: "struct IFluidVaultResolver.VaultEntireData",
-        name: "entireData_",
-        type: "tuple",
-      },
-    ],
+    outputs: [VaultEntireDataStruct],
     stateMutability: "view",
     type: "function",
   },
@@ -308,20 +416,8 @@ export const VAULT_RESOLVER_ABI = [
     inputs: [{ internalType: "uint256", name: "nftId_", type: "uint256" }],
     name: "positionByNftId",
     outputs: [
-      {
-        components: [
-          { internalType: "uint256", name: "nftId", type: "uint256" },
-          { internalType: "address", name: "owner", type: "address" },
-          { internalType: "bool", name: "isLiquidated", type: "bool" },
-          { internalType: "uint256", name: "supply", type: "uint256" },
-          { internalType: "uint256", name: "borrow", type: "uint256" },
-          { internalType: "uint256", name: "supplyExchangePrice", type: "uint256" },
-          { internalType: "uint256", name: "borrowExchangePrice", type: "uint256" },
-        ],
-        internalType: "struct IFluidVaultResolver.Position",
-        name: "position_",
-        type: "tuple",
-      },
+      UserPositionStruct,
+      { ...VaultEntireDataStruct, name: "vaultData_" },
     ],
     stateMutability: "view",
     type: "function",
@@ -331,16 +427,8 @@ export const VAULT_RESOLVER_ABI = [
     name: "positionsByUser",
     outputs: [
       {
-        components: [
-          { internalType: "uint256", name: "nftId", type: "uint256" },
-          { internalType: "address", name: "owner", type: "address" },
-          { internalType: "bool", name: "isLiquidated", type: "bool" },
-          { internalType: "uint256", name: "supply", type: "uint256" },
-          { internalType: "uint256", name: "borrow", type: "uint256" },
-          { internalType: "uint256", name: "supplyExchangePrice", type: "uint256" },
-          { internalType: "uint256", name: "borrowExchangePrice", type: "uint256" },
-        ],
-        internalType: "struct IFluidVaultResolver.Position",
+        components: UserPositionStruct.components,
+        internalType: "struct Structs.UserPosition[]",
         name: "positions_",
         type: "tuple[]",
       },

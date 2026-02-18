@@ -8,10 +8,16 @@
  */
 
 import { z } from "zod";
+import { ethers } from "ethers";
 import { getProvider, getContract } from "../utils/provider.js";
 import { getChainConfig, SUPPORTED_CHAINS, CONTRACTS } from "../config/chains.js";
-import { VAULT_RESOLVER_ABI } from "../abis/index.js";
-import { serializeBigInts } from "../utils/formatting.js";
+import { VAULT_RESOLVER_ABI, ERC20_ABI } from "../abis/index.js";
+import {
+  serializeBigInts,
+  formatTokenAmount,
+  formatVaultPercent,
+  formatRateToAPY,
+} from "../utils/formatting.js";
 
 const ChainParam = z.string().describe(`Blockchain network. Supported: ${SUPPORTED_CHAINS.join(", ")}`);
 
@@ -22,6 +28,42 @@ const VAULT_TYPES: Record<number, string> = {
   30000: "T3",
   40000: "T4",
 };
+
+/**
+ * Helper: get the primary supply token address from ConstantViews.
+ * T1/T3 vaults have supply as a single token (token0 of supplyToken struct).
+ * T2/T4 vaults have supply as a DEX pair (token0 and token1).
+ */
+function getSupplyTokenAddress(cv: any): string {
+  // New ABI: supplyToken is a Tokens struct {token0, token1}
+  if (cv.supplyToken?.token0) return cv.supplyToken.token0;
+  // Also try the `supply` field which is the direct supply address
+  if (cv.supply && cv.supply !== ethers.ZeroAddress) return cv.supply;
+  return ethers.ZeroAddress;
+}
+
+function getBorrowTokenAddress(cv: any): string {
+  if (cv.borrowToken?.token0) return cv.borrowToken.token0;
+  if (cv.borrow && cv.borrow !== ethers.ZeroAddress) return cv.borrow;
+  return ethers.ZeroAddress;
+}
+
+/**
+ * Helper: get token symbol and decimals.
+ */
+async function getTokenInfo(address: string, provider: any): Promise<{ symbol: string; decimals: number }> {
+  if (!address || address === ethers.ZeroAddress) return { symbol: "UNKNOWN", decimals: 18 };
+  try {
+    const token = getContract(address, ERC20_ABI, provider);
+    const [symbol, decimals] = await Promise.all([
+      token.symbol().catch(() => "UNKNOWN"),
+      token.decimals().catch(() => 18),
+    ]);
+    return { symbol, decimals: Number(decimals) };
+  } catch {
+    return { symbol: "UNKNOWN", decimals: 18 };
+  }
+}
 
 export const vaultReadTools = {
   // ── List all vaults ────────────────────────────────────────────────────
@@ -113,7 +155,7 @@ export const vaultReadTools = {
   // ── Get vault entire data ──────────────────────────────────────────────
   fluid_get_vault_data: {
     description:
-      "Get comprehensive data for a specific Fluid vault: supply/borrow tokens, rates, collateral factor, liquidation threshold, LTV limits, total supply/borrow, and availability limits.",
+      "Get comprehensive data for a specific Fluid vault: supply/borrow tokens with symbols, rates as APY, human-readable collateral factor, liquidation threshold, LTV limits, total supply/borrow, and availability limits.",
     schema: z.object({
       chain: ChainParam,
       vault_address: z.string().describe("Vault contract address"),
@@ -124,6 +166,21 @@ export const vaultReadTools = {
       const resolver = getContract(CONTRACTS.vaultResolver, VAULT_RESOLVER_ABI, provider);
 
       const data = await resolver.getVaultEntireData(args.vault_address);
+
+      const cv = data.constantVariables;
+      const supplyAddr = getSupplyTokenAddress(cv);
+      const borrowAddr = getBorrowTokenAddress(cv);
+
+      const [supplyInfo, borrowInfo] = await Promise.all([
+        getTokenInfo(supplyAddr, provider),
+        getTokenInfo(borrowAddr, provider),
+      ]);
+
+      const vaultTypeNum = Number(cv.vaultType || 0);
+      const vaultType = VAULT_TYPES[vaultTypeNum] || `UNKNOWN(${vaultTypeNum})`;
+
+      const epr = data.exchangePricesAndRates;
+
       return {
         content: [
           {
@@ -132,33 +189,42 @@ export const vaultReadTools = {
               {
                 chain: args.chain,
                 vault: data.vault,
-                constants: serializeBigInts({
-                  supplyToken: data.constantVariables.supplyToken,
-                  borrowToken: data.constantVariables.borrowToken,
-                  supplyDecimals: Number(data.constantVariables.supplyDecimals),
-                  borrowDecimals: Number(data.constantVariables.borrowDecimals),
-                  vaultId: data.constantVariables.vaultId,
-                }),
-                configs: serializeBigInts({
-                  collateralFactor: Number(data.configs.collateralFactor),
-                  liquidationThreshold: Number(data.configs.liquidationThreshold),
-                  liquidationMaxLimit: Number(data.configs.liquidationMaxLimit),
-                  liquidationPenalty: Number(data.configs.liquidationPenalty),
-                  borrowFee: Number(data.configs.borrowFee),
-                  oraclePrice: data.configs.oraclePrice,
-                }),
-                rates: serializeBigInts({
-                  supplyRate: data.exchangePricesAndRates.supplyRate,
-                  borrowRate: data.exchangePricesAndRates.borrowRate,
-                  supplyExchangePrice: data.exchangePricesAndRates.supplyExchangePrice,
-                  borrowExchangePrice: data.exchangePricesAndRates.borrowExchangePrice,
-                }),
-                totals: serializeBigInts({
-                  totalSupplyVault: data.totalSupplyAndBorrow.totalSupplyVault,
-                  totalBorrowVault: data.totalSupplyAndBorrow.totalBorrowVault,
-                  totalSupplyLiquidity: data.totalSupplyAndBorrow.totalSupplyLiquidity,
-                  totalBorrowLiquidity: data.totalSupplyAndBorrow.totalBorrowLiquidity,
-                }),
+                vaultType,
+                isSmartCol: data.isSmartCol,
+                isSmartDebt: data.isSmartDebt,
+                tokens: {
+                  supplyToken: supplyAddr,
+                  supplySymbol: supplyInfo.symbol,
+                  supplyDecimals: supplyInfo.decimals,
+                  borrowToken: borrowAddr,
+                  borrowSymbol: borrowInfo.symbol,
+                  borrowDecimals: borrowInfo.decimals,
+                  vaultId: serializeBigInts(cv.vaultId),
+                },
+                configs: {
+                  collateralFactor: formatVaultPercent(Number(data.configs.collateralFactor)),
+                  liquidationThreshold: formatVaultPercent(Number(data.configs.liquidationThreshold)),
+                  liquidationMaxLimit: formatVaultPercent(Number(data.configs.liquidationMaxLimit)),
+                  withdrawalGap: formatVaultPercent(Number(data.configs.withdrawalGap)),
+                  liquidationPenalty: formatVaultPercent(Number(data.configs.liquidationPenalty)),
+                  borrowFee: formatVaultPercent(Number(data.configs.borrowFee)),
+                  oraclePriceOperate: serializeBigInts(data.configs.oraclePriceOperate),
+                  oraclePriceLiquidate: serializeBigInts(data.configs.oraclePriceLiquidate),
+                },
+                rates: {
+                  supplyRateLiquidity: formatRateToAPY(BigInt(epr.supplyRateLiquidity.toString())),
+                  borrowRateLiquidity: formatRateToAPY(BigInt(epr.borrowRateLiquidity.toString())),
+                  supplyRateVault: formatRateToAPY(BigInt(epr.supplyRateVault.toString())),
+                  borrowRateVault: formatRateToAPY(BigInt(epr.borrowRateVault.toString())),
+                  vaultSupplyExchangePrice: serializeBigInts(epr.vaultSupplyExchangePrice),
+                  vaultBorrowExchangePrice: serializeBigInts(epr.vaultBorrowExchangePrice),
+                },
+                totals: {
+                  totalSupplyVault: formatTokenAmount(BigInt(data.totalSupplyAndBorrow.totalSupplyVault.toString()), supplyInfo.decimals),
+                  totalBorrowVault: formatTokenAmount(BigInt(data.totalSupplyAndBorrow.totalBorrowVault.toString()), borrowInfo.decimals),
+                  totalSupplyLiquidityOrDex: formatTokenAmount(BigInt(data.totalSupplyAndBorrow.totalSupplyLiquidityOrDex.toString()), supplyInfo.decimals),
+                  totalBorrowLiquidityOrDex: formatTokenAmount(BigInt(data.totalSupplyAndBorrow.totalBorrowLiquidityOrDex.toString()), borrowInfo.decimals),
+                },
                 limits: serializeBigInts({
                   withdrawLimit: data.limitsAndAvailability.withdrawLimit,
                   withdrawable: data.limitsAndAvailability.withdrawable,
@@ -166,8 +232,6 @@ export const vaultReadTools = {
                   borrowable: data.limitsAndAvailability.borrowable,
                   minimumBorrowing: data.limitsAndAvailability.minimumBorrowing,
                 }),
-                isSmartCol: data.isSmartCol,
-                isSmartDebt: data.isSmartDebt,
               },
               null,
               2
@@ -181,7 +245,7 @@ export const vaultReadTools = {
   // ── Get vault position by NFT ID ───────────────────────────────────────
   fluid_get_vault_position: {
     description:
-      "Get a specific vault position by its NFT ID. Each Fluid vault position is represented as an NFT. Returns supply (collateral), borrow (debt), liquidation status, and exchange prices.",
+      "Get a specific vault position by its NFT ID. Each Fluid vault position is represented as an NFT. Returns decoded supply (collateral), borrow (debt) in human-readable token amounts, liquidation status, vault config, and rates.",
     schema: z.object({
       chain: ChainParam,
       nft_id: z.number().describe("Position NFT ID"),
@@ -191,47 +255,68 @@ export const vaultReadTools = {
       const provider = getProvider(args.chain, args.rpc_url);
       const resolver = getContract(CONTRACTS.vaultResolver, VAULT_RESOLVER_ABI, provider);
 
-      const [position, vaultAddr] = await Promise.all([
-        resolver.positionByNftId(args.nft_id),
-        resolver.vaultByNftId(args.nft_id),
+      // positionByNftId returns (UserPosition, VaultEntireData)
+      const [position, vaultData] = await resolver.positionByNftId(args.nft_id);
+
+      const cv = vaultData.constantVariables;
+      const supplyAddr = getSupplyTokenAddress(cv);
+      const borrowAddr = getBorrowTokenAddress(cv);
+
+      const [supplyInfo, borrowInfo] = await Promise.all([
+        getTokenInfo(supplyAddr, provider),
+        getTokenInfo(borrowAddr, provider),
       ]);
 
-      // Get vault data as well
-      let vaultData = null;
-      try {
-        vaultData = await resolver.getVaultEntireData(vaultAddr);
-      } catch {}
+      const vaultTypeNum = Number(cv.vaultType || 0);
+      const vaultType = VAULT_TYPES[vaultTypeNum] || `UNKNOWN(${vaultTypeNum})`;
+
+      // position.supply and position.borrow are already in token's smallest unit
+      const rawSupply = BigInt(position.supply.toString());
+      const rawBorrow = BigInt(position.borrow.toString());
+
+      const result: any = {
+        chain: args.chain,
+        nftId: args.nft_id,
+        vault: vaultData.vault,
+        vaultType,
+        owner: position.owner,
+        isLiquidated: position.isLiquidated,
+        isSmartCol: vaultData.isSmartCol,
+        isSmartDebt: vaultData.isSmartDebt,
+        supply: {
+          token: supplyAddr,
+          symbol: supplyInfo.symbol,
+          amount: formatTokenAmount(rawSupply, supplyInfo.decimals),
+          amountRaw: rawSupply.toString(),
+        },
+        borrow: {
+          token: borrowAddr,
+          symbol: borrowInfo.symbol,
+          amount: formatTokenAmount(rawBorrow, borrowInfo.decimals),
+          amountRaw: rawBorrow.toString(),
+        },
+        config: {
+          collateralFactor: formatVaultPercent(Number(vaultData.configs.collateralFactor)),
+          liquidationThreshold: formatVaultPercent(Number(vaultData.configs.liquidationThreshold)),
+          liquidationMaxLimit: formatVaultPercent(Number(vaultData.configs.liquidationMaxLimit)),
+          liquidationPenalty: formatVaultPercent(Number(vaultData.configs.liquidationPenalty)),
+          borrowFee: formatVaultPercent(Number(vaultData.configs.borrowFee)),
+          oraclePriceOperate: serializeBigInts(vaultData.configs.oraclePriceOperate),
+          oraclePriceLiquidate: serializeBigInts(vaultData.configs.oraclePriceLiquidate),
+        },
+        rates: {
+          supplyRateLiquidity: formatRateToAPY(BigInt(vaultData.exchangePricesAndRates.supplyRateLiquidity.toString())),
+          borrowRateLiquidity: formatRateToAPY(BigInt(vaultData.exchangePricesAndRates.borrowRateLiquidity.toString())),
+          supplyRateVault: formatRateToAPY(BigInt(vaultData.exchangePricesAndRates.supplyRateVault.toString())),
+          borrowRateVault: formatRateToAPY(BigInt(vaultData.exchangePricesAndRates.borrowRateVault.toString())),
+        },
+      };
 
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(
-              {
-                chain: args.chain,
-                nftId: args.nft_id,
-                vault: vaultAddr,
-                position: serializeBigInts({
-                  nftId: position.nftId,
-                  owner: position.owner,
-                  isLiquidated: position.isLiquidated,
-                  supply: position.supply,
-                  borrow: position.borrow,
-                  supplyExchangePrice: position.supplyExchangePrice,
-                  borrowExchangePrice: position.borrowExchangePrice,
-                }),
-                vaultData: vaultData
-                  ? serializeBigInts({
-                      supplyToken: vaultData.constantVariables.supplyToken,
-                      borrowToken: vaultData.constantVariables.borrowToken,
-                      collateralFactor: Number(vaultData.configs.collateralFactor),
-                      liquidationThreshold: Number(vaultData.configs.liquidationThreshold),
-                    })
-                  : null,
-              },
-              null,
-              2
-            ),
+            text: JSON.stringify(result, null, 2),
           },
         ],
       };
@@ -275,7 +360,7 @@ export const vaultReadTools = {
   // ── Get vault by NFT ID ────────────────────────────────────────────────
   fluid_get_vault_by_nft: {
     description:
-      "Get the vault address for a specific vault position NFT ID.",
+      "Get the vault address and decoded position summary for a specific vault position NFT ID.",
     schema: z.object({
       chain: ChainParam,
       nft_id: z.number().describe("Position NFT ID"),
@@ -285,7 +370,24 @@ export const vaultReadTools = {
       const provider = getProvider(args.chain, args.rpc_url);
       const resolver = getContract(CONTRACTS.vaultResolver, VAULT_RESOLVER_ABI, provider);
 
-      const vault = await resolver.vaultByNftId(args.nft_id);
+      // positionByNftId returns (UserPosition, VaultEntireData)
+      const [position, vaultData] = await resolver.positionByNftId(args.nft_id);
+
+      const cv = vaultData.constantVariables;
+      const supplyAddr = getSupplyTokenAddress(cv);
+      const borrowAddr = getBorrowTokenAddress(cv);
+
+      const [supplyInfo, borrowInfo] = await Promise.all([
+        getTokenInfo(supplyAddr, provider),
+        getTokenInfo(borrowAddr, provider),
+      ]);
+
+      const vaultTypeNum = Number(cv.vaultType || 0);
+      const vaultType = VAULT_TYPES[vaultTypeNum] || `UNKNOWN(${vaultTypeNum})`;
+
+      const rawSupply = BigInt(position.supply.toString());
+      const rawBorrow = BigInt(position.borrow.toString());
+
       return {
         content: [
           {
@@ -294,7 +396,29 @@ export const vaultReadTools = {
               {
                 chain: args.chain,
                 nftId: args.nft_id,
-                vault: vault,
+                vault: vaultData.vault,
+                vaultType,
+                isSmartCol: vaultData.isSmartCol,
+                isSmartDebt: vaultData.isSmartDebt,
+                owner: position.owner,
+                isLiquidated: position.isLiquidated,
+                supply: {
+                  token: supplyAddr,
+                  symbol: supplyInfo.symbol,
+                  amount: formatTokenAmount(rawSupply, supplyInfo.decimals),
+                  amountRaw: rawSupply.toString(),
+                },
+                borrow: {
+                  token: borrowAddr,
+                  symbol: borrowInfo.symbol,
+                  amount: formatTokenAmount(rawBorrow, borrowInfo.decimals),
+                  amountRaw: rawBorrow.toString(),
+                },
+                config: {
+                  collateralFactor: formatVaultPercent(Number(vaultData.configs.collateralFactor)),
+                  liquidationThreshold: formatVaultPercent(Number(vaultData.configs.liquidationThreshold)),
+                  liquidationPenalty: formatVaultPercent(Number(vaultData.configs.liquidationPenalty)),
+                },
               },
               null,
               2

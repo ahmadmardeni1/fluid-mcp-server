@@ -21,10 +21,10 @@ Fluid is a next-generation DeFi protocol by [Instadapp](https://instadapp.io) th
 
 ```bash
 # Install globally
-npm install -g @fluid-mcp/server
+npm install -g fluid-mcp-server
 
 # Or run directly with npx
-npx @fluid-mcp/server
+npx fluid-mcp-server
 ```
 
 ### Add to Claude Desktop
@@ -36,7 +36,7 @@ Add to your Claude Desktop config (`~/.claude/claude_desktop_config.json`):
   "mcpServers": {
     "fluid": {
       "command": "npx",
-      "args": ["@fluid-mcp/server"]
+      "args": ["fluid-mcp-server"]
     }
   }
 }
@@ -45,13 +45,13 @@ Add to your Claude Desktop config (`~/.claude/claude_desktop_config.json`):
 ### Add to Claude Code
 
 ```bash
-claude mcp add fluid -- npx @fluid-mcp/server
+claude mcp add fluid -- npx fluid-mcp-server
 ```
 
 ### Build from Source
 
 ```bash
-git clone https://github.com/ahmadmardeni/fluid-mcp-server.git
+git clone https://github.com/ahmadmardeni1/fluid-mcp-server.git
 cd fluid-mcp-server
 npm install
 npm run build

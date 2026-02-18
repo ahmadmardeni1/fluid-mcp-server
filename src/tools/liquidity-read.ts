@@ -12,7 +12,7 @@ import { z } from "zod";
 import { getProvider, getContract } from "../utils/provider.js";
 import { getChainConfig, SUPPORTED_CHAINS, CONTRACTS } from "../config/chains.js";
 import { LIQUIDITY_RESOLVER_ABI } from "../abis/index.js";
-import { serializeBigInts } from "../utils/formatting.js";
+import { serializeBigInts, formatRateToAPY } from "../utils/formatting.js";
 
 const ChainParam = z
   .string()
@@ -98,22 +98,26 @@ export const liquidityReadTools = {
               {
                 chain: args.chain,
                 token: args.token_address,
-                data: serializeBigInts({
-                  supplyRate: data.supplyRate,
-                  borrowRate: data.borrowRate,
-                  fee: data.fee,
-                  lastUpdateTimestamp: data.lastUpdateTimestamp,
-                  supplyExchangePrice: data.supplyExchangePrice,
-                  borrowExchangePrice: data.borrowExchangePrice,
-                  supplyRawInterest: data.supplyRawInterest,
-                  supplyInterestFree: data.supplyInterestFree,
-                  borrowRawInterest: data.borrowRawInterest,
-                  borrowInterestFree: data.borrowInterestFree,
-                  totalSupply: data.totalSupply,
-                  totalBorrow: data.totalBorrow,
-                  revenue: data.revenue,
-                  maxUtilization: data.maxUtilization,
-                }),
+                data: {
+                  ...serializeBigInts({
+                    supplyRate: data.supplyRate,
+                    borrowRate: data.borrowRate,
+                    fee: data.fee,
+                    lastUpdateTimestamp: data.lastUpdateTimestamp,
+                    supplyExchangePrice: data.supplyExchangePrice,
+                    borrowExchangePrice: data.borrowExchangePrice,
+                    supplyRawInterest: data.supplyRawInterest,
+                    supplyInterestFree: data.supplyInterestFree,
+                    borrowRawInterest: data.borrowRawInterest,
+                    borrowInterestFree: data.borrowInterestFree,
+                    totalSupply: data.totalSupply,
+                    totalBorrow: data.totalBorrow,
+                    revenue: data.revenue,
+                    maxUtilization: data.maxUtilization,
+                  }),
+                  supplyAPY: formatRateToAPY(BigInt(data.supplyRate.toString())),
+                  borrowAPY: formatRateToAPY(BigInt(data.borrowRate.toString())),
+                },
               },
               null,
               2
@@ -142,8 +146,8 @@ export const liquidityReadTools = {
       );
 
       const tokensData = await resolver.getAllOverallTokensData();
-      const formatted = tokensData.map((t: any) =>
-        serializeBigInts({
+      const formatted = tokensData.map((t: any) => ({
+        ...serializeBigInts({
           token: t.token,
           supplyRate: t.data.supplyRate,
           borrowRate: t.data.borrowRate,
@@ -152,8 +156,10 @@ export const liquidityReadTools = {
           revenue: t.data.revenue,
           supplyExchangePrice: t.data.supplyExchangePrice,
           borrowExchangePrice: t.data.borrowExchangePrice,
-        })
-      );
+        }),
+        supplyAPY: formatRateToAPY(BigInt(t.data.supplyRate.toString())),
+        borrowAPY: formatRateToAPY(BigInt(t.data.borrowRate.toString())),
+      }));
 
       return {
         content: [
