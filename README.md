@@ -1,3 +1,5 @@
+EXPERMINTAL MODE ONLY
+
 # Fluid MCP Server
 
 A production-ready [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that enables AI agents to interact with the **Fluid DeFi Protocol** across all supported chains.
@@ -393,6 +395,37 @@ fluid-mcp-server/
 ├── README.md
 └── LICENSE
 ```
+
+## Testing & Example Tool Calls
+
+You can exercise the MCP server directly over stdio using raw JSON‑RPC.
+
+From the project root (after `npm run build`):
+
+```bash
+# 1) List all fTokens on Ethereum
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"fluid_get_all_ftokens","arguments":{"chain":"ethereum"}}}' \
+  | node dist/index.js
+
+# 2) Get detailed info for a specific fToken (fUSDC on Ethereum)
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"fluid_get_ftoken_details","arguments":{"chain":"ethereum","ftoken_address":"0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33"}}}' \
+  | node dist/index.js
+
+# 3) Build an unsigned deposit tx into fUSDC (100 USDC, 6 decimals)
+echo '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"fluid_build_lending_deposit","arguments":{"chain":"ethereum","ftoken_address":"0x9Fb7b4477576Fe5B32be4C1843aFB1e55F251B33","amount":"100000000","receiver":"0xYOUR_ADDRESS"}}}' \
+  | node dist/index.js
+
+# 4) List all vaults on Ethereum with their types (T1–T4)
+echo '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"fluid_get_all_vaults","arguments":{"chain":"ethereum"}}}' \
+  | node dist/index.js
+
+# 5) Build an unsigned Vault T1 operate() tx (open position)
+# Example: ETH/GHO T1 vault on Ethereum
+echo '{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"fluid_build_vault_t1_operate","arguments":{"chain":"ethereum","vault_address":"0xD9A7Dcdc57C6e44f00740dC73664fA456B983669","nft_id":0,"new_col":"100000000000000000","new_debt":"200000000000000000000","receiver":"0xYOUR_ADDRESS"}}}' \
+  | node dist/index.js
+```
+
+Each call returns a JSON‑RPC response where `result.content[0].text` contains a JSON payload (either on‑chain data or an unsigned transaction description).
 
 ## Contract Address Updates
 
